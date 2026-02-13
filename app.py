@@ -62,14 +62,16 @@ class TestRailClient:
         limit = 250
         while True:
             data = self._get(f"get_tests/{run_id}", {"limit": limit, "offset": offset})
-            batch = data.get("tests", data) if isinstance(data, dict) else data
-            if isinstance(batch, list):
-                tests.extend(batch)
+            if isinstance(data, dict) and "tests" in data:
+                tests.extend(data["tests"])
+                if data.get("_links", {}).get("next") is None:
+                    break
+                offset += limit
+            elif isinstance(data, list):
+                tests.extend(data)
                 break
-            tests.extend(batch)
-            if data.get("_links", {}).get("next") is None:
+            else:
                 break
-            offset += limit
         return tests
 
     def get_statuses(self) -> list[dict]:
@@ -117,28 +119,41 @@ def fetch_plan_data(plan_id: int):
 # Status label mapping (TestRail status label → our semantic group)
 # Adjust the left side to match your TestRail custom status labels.
 # ─────────────────────────────────────────────────────────────
-STATUS_GROUP_MAP = {
-    "Passed": "Passed",
-    "Passed with Issue": "Passed with Issue",
-    "Passed with Stub": "Passed with Stub",
-    "To Do": "To Do",
-    "Blocked": "Blocked",
-    "Failed (Medium)": "Failed (Medium)",
-    "Not Applicable": "Not Applicable",
-    # fallbacks for system statuses
-    "Failed": "Failed (Medium)",
-    "Retest": "To Do",
-    "Untested": "To Do",
-}
+def build_status_group_map(status_map: dict[int, str]) -> dict[str, str]:
+    """Dynamically map every TestRail status label to our semantic groups.
+
+    Known labels are mapped explicitly. Anything unknown is kept as-is
+    so it still shows up in the dashboard (in an 'Other' bucket).
+    """
+    explicit = {
+        "Passed": "Passed",
+        "Passed with Issue": "Passed with Issue",
+        "Passed with Stub": "Passed with Stub",
+        "To Do": "To Do",
+        "To-do": "To Do",
+        "Blocked": "Blocked",
+        "Failed (Medium)": "Failed (Medium)",
+        "Not Applicable": "Not Applicable",
+        # system statuses
+        "Failed": "Failed",
+        "Retest": "To Do",
+        "Untested": "Untested",
+    }
+    mapping = {}
+    for label in status_map.values():
+        mapping[label] = explicit.get(label, label)
+    return mapping
 
 STATUS_COLORS = {
     "Passed": "#28a745",
     "Passed with Issue": "#80c565",
-    "Passed with Stub": "#b3d99b",
+    "Passed with Stub": "#d4c84e",
     "To Do": "#3498db",
-    "Blocked": "#e74c3c",
+    "Blocked": "#e67e22",
+    "Failed": "#e74c3c",
     "Failed (Medium)": "#f39c12",
     "Not Applicable": "#95a5a6",
+    "Untested": "#999999",
 }
 
 STATUS_DESCRIPTIONS = {
@@ -147,25 +162,24 @@ STATUS_DESCRIPTIONS = {
     "Passed with Stub": "Implementation completed — PR yet to be raised.",
     "To Do": "Picked by team.",
     "Blocked": "Blocked due to an issue, pending test data, or other dependencies.",
+    "Failed": "Test execution failed.",
     "Failed (Medium)": "Automation not feasible on UAT; will be revisited later for development-only automation.",
     "Not Applicable": "Excluded from automation (not relevant for device, requires manual intervention, excessive wait, config conflicts, or precondition conflicts).",
+    "Untested": "Not yet executed.",
 }
 
-# Ordered for display
-STATUS_ORDER = [
+# Ordered for display — built dynamically to catch any extra statuses
+BASE_STATUS_ORDER = [
     "Passed",
     "Passed with Issue",
     "Passed with Stub",
     "To Do",
     "Blocked",
+    "Failed",
     "Failed (Medium)",
+    "Untested",
     "Not Applicable",
 ]
-
-
-def classify_status(label: str) -> str:
-    """Map a TestRail status label to our semantic group."""
-    return STATUS_GROUP_MAP.get(label, label)
 
 
 def build_testrail_test_url(test: dict) -> str:
@@ -216,10 +230,12 @@ def main():
             return
 
     # --- Build DataFrame ---
+    status_group_map = build_status_group_map(status_map)
+
     rows = []
     for t in all_tests:
         status_label = status_map.get(t.get("status_id"), "Unknown")
-        group = classify_status(status_label)
+        group = status_group_map.get(status_label, status_label)
         rows.append({
             "Test ID": t.get("id"),
             "Case ID": t.get("case_id"),
@@ -259,12 +275,19 @@ def main():
 
     total_tests = len(df_filtered)
 
+    # Build display order: base order + any extra statuses found in data
+    all_statuses_in_data = df_filtered["Status"].unique().tolist()
+    status_order = [s for s in BASE_STATUS_ORDER if s in all_statuses_in_data]
+    for s in all_statuses_in_data:
+        if s not in status_order:
+            status_order.append(s)
+
     # --- KPI row ---
     st.markdown("### Overview")
     status_counts = df_filtered["Status"].value_counts()
 
-    cols = st.columns(len(STATUS_ORDER))
-    for i, status in enumerate(STATUS_ORDER):
+    cols = st.columns(len(status_order))
+    for i, status in enumerate(status_order):
         count = status_counts.get(status, 0)
         pct = (count / total_tests * 100) if total_tests > 0 else 0
         with cols[i]:
@@ -284,7 +307,7 @@ def main():
     with col_chart1:
         st.markdown("### Status Distribution")
         chart_data = []
-        for s in STATUS_ORDER:
+        for s in status_order:
             c = status_counts.get(s, 0)
             if c > 0:
                 chart_data.append({"Status": s, "Count": c})
@@ -312,7 +335,7 @@ def main():
                 color="Status",
                 color_discrete_map=STATUS_COLORS,
                 barmode="stack",
-                category_orders={"Status": STATUS_ORDER},
+                category_orders={"Status": status_order},
             )
             fig_bar.update_layout(margin=dict(t=20, b=20, l=20, r=20))
             st.plotly_chart(fig_bar, use_container_width=True)
@@ -338,7 +361,7 @@ def main():
     # --- Detail section per status group ---
     st.markdown("### Detail by Status")
 
-    for status in STATUS_ORDER:
+    for status in status_order:
         group_df = df_filtered[df_filtered["Status"] == status]
         count = len(group_df)
         if count == 0:
@@ -367,7 +390,7 @@ def main():
     # --- Status Legend ---
     st.divider()
     st.markdown("### Status Legend")
-    for status in STATUS_ORDER:
+    for status in status_order:
         color = STATUS_COLORS.get(status, "#666")
         st.markdown(f"- **{status}**: {STATUS_DESCRIPTIONS.get(status, '')}")
 
