@@ -47,8 +47,14 @@ class TestRailClient:
         self.session.headers.update({"Content-Type": "application/json"})
 
     def _get(self, endpoint: str, params: dict | None = None):
+        # TestRail uses ?/api/v2/ in URLs, so extra query params must be
+        # appended with & rather than passed as separate params (which would
+        # add a second '?' and break the request).
         url = f"{self.base_url}/index.php?/api/v2/{endpoint}"
-        resp = self.session.get(url, params=params)
+        if params:
+            query = "&".join(f"{k}={v}" for k, v in params.items())
+            url = f"{url}&{query}"
+        resp = self.session.get(url)
         resp.raise_for_status()
         return resp.json()
 
