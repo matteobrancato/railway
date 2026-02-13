@@ -353,15 +353,15 @@ def main():
                 display_cols.append("Review Notes")
 
             display_df = group_df[display_cols + ["TestRail Link"]].copy()
-            display_df["Case ID"] = display_df.apply(
-                lambda r: f"[C{r['Case ID']}]({r['TestRail Link']})" if r["TestRail Link"] else str(r["Case ID"]),
-                axis=1,
-            )
-            display_df = display_df.drop(columns=["TestRail Link"])
+            display_df = display_df.rename(columns={"TestRail Link": "Link"})
 
-            st.markdown(
-                display_df.to_markdown(index=False),
-                unsafe_allow_html=True,
+            st.dataframe(
+                display_df,
+                column_config={
+                    "Link": st.column_config.LinkColumn("TestRail", display_text="Open"),
+                },
+                hide_index=True,
+                use_container_width=True,
             )
 
     # --- Status Legend ---
