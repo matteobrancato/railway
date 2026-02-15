@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 
 # ─────────────────────────────────────────────────────────────
@@ -12,9 +11,6 @@ TESTRAIL_URL = st.secrets.get("TESTRAIL_URL", "")
 TESTRAIL_USER = st.secrets.get("TESTRAIL_USER", "")
 TESTRAIL_API_KEY = st.secrets.get("TESTRAIL_API_KEY", "")
 
-# ─────────────────────────────────────────────────────────────
-# BU → Plan mapping — add new BUs here
-# ─────────────────────────────────────────────────────────────
 BU_PLANS = {
     "Watsons Turkey": {"plan_id": 61979},
     # "Another BU": {"plan_id": 12345},
@@ -102,7 +98,7 @@ def fetch_plan_data(plan_id: int):
 
 
 # ─────────────────────────────────────────────────────────────
-# Status configuration
+# Status config
 # ─────────────────────────────────────────────────────────────
 def build_status_group_map(status_map: dict[int, str]) -> dict[str, str]:
     explicit = {
@@ -118,34 +114,19 @@ def build_status_group_map(status_map: dict[int, str]) -> dict[str, str]:
         "Retest": "To Do",
         "Untested": "Untested",
     }
-    mapping = {}
-    for label in status_map.values():
-        mapping[label] = explicit.get(label, label)
-    return mapping
+    return {label: explicit.get(label, label) for label in status_map.values()}
 
 
 STATUS_COLORS = {
-    "Passed": "#10b981",
-    "Passed with Issue": "#34d399",
-    "Passed with Stub": "#a3e635",
+    "Passed": "#059669",
+    "Passed with Issue": "#10b981",
+    "Passed with Stub": "#84cc16",
     "To Do": "#6366f1",
-    "Blocked": "#f97316",
-    "Failed": "#ef4444",
-    "Failed (Medium)": "#f59e0b",
-    "Not Applicable": "#94a3b8",
-    "Untested": "#cbd5e1",
-}
-
-STATUS_EMOJI = {
-    "Passed": ":green[Passed]",
-    "Passed with Issue": ":green[Passed with Issue]",
-    "Passed with Stub": ":green[Passed with Stub]",
-    "To Do": ":blue[To Do]",
-    "Blocked": ":orange[Blocked]",
-    "Failed": ":red[Failed]",
-    "Failed (Medium)": ":orange[Failed (Medium)]",
-    "Not Applicable": "Not Applicable",
-    "Untested": "Untested",
+    "Blocked": "#ea580c",
+    "Failed": "#dc2626",
+    "Failed (Medium)": "#d97706",
+    "Not Applicable": "#64748b",
+    "Untested": "#94a3b8",
 }
 
 STATUS_DESCRIPTIONS = {
@@ -169,201 +150,218 @@ BASE_STATUS_ORDER = [
 
 def build_testrail_test_url(test: dict) -> str:
     case_id = test.get("case_id")
-    if case_id:
-        return f"{TESTRAIL_URL}/index.php?/cases/view/{case_id}"
-    return ""
+    return f"{TESTRAIL_URL}/index.php?/cases/view/{case_id}" if case_id else ""
 
 
 # ─────────────────────────────────────────────────────────────
-# Main app
+# Main
 # ─────────────────────────────────────────────────────────────
 def main():
-    st.set_page_config(page_title="Automation Backlog Dashboard", layout="wide")
+    st.set_page_config(page_title="Automation Backlog", layout="wide")
 
-    # --- Sidebar ---
+    # ── Global styles ──
+    st.markdown("""<style>
+    .block-container {padding-top:1.5rem; padding-bottom:1rem;}
+    [data-testid="stMetricValue"] {font-size:1.6rem;}
+    [data-testid="stMetricDelta"] {font-size:0.8rem;}
+    div[data-testid="stExpander"] details summary span {font-size:0.95rem;}
+    #MainMenu, footer, header {visibility:hidden;}
+    </style>""", unsafe_allow_html=True)
+
+    # ── Sidebar ──
     with st.sidebar:
-        st.title("Settings")
+        st.markdown("### Filters")
         bu_name = st.selectbox("Business Unit", list(BU_PLANS.keys()))
 
     if not all([TESTRAIL_URL, TESTRAIL_USER, TESTRAIL_API_KEY]):
-        st.error(
-            "TestRail credentials not configured. "
-            "Set `TESTRAIL_URL`, `TESTRAIL_USER`, and `TESTRAIL_API_KEY` in Streamlit Secrets."
-        )
+        st.error("TestRail credentials not configured. Set them in Streamlit Secrets.")
         return
 
     plan_id = BU_PLANS[bu_name]["plan_id"]
 
-    with st.spinner("Loading data from TestRail..."):
+    with st.spinner("Loading from TestRail..."):
         try:
             plan, runs_info, all_tests, status_map, priority_map, type_map = fetch_plan_data(plan_id)
-        except requests.HTTPError as e:
-            st.error(f"TestRail API error: {e}")
-            return
         except Exception as e:
             st.error(f"Error: {e}")
             return
 
-    # --- DataFrame ---
-    status_group_map = build_status_group_map(status_map)
+    # ── Build dataframe ──
+    sgm = build_status_group_map(status_map)
     rows = []
     for t in all_tests:
-        status_label = status_map.get(t.get("status_id"), "Unknown")
-        group = status_group_map.get(status_label, status_label)
+        sl = status_map.get(t.get("status_id"), "Unknown")
         rows.append({
-            "Test ID": t.get("id"),
             "Case ID": t.get("case_id"),
             "Title": t.get("title", ""),
-            "Status (TestRail)": status_label,
-            "Status": group,
-            "Priority": priority_map.get(t.get("priority_id"), "Unknown"),
-            "Type": type_map.get(t.get("type_id"), "Unknown"),
+            "Status": sgm.get(sl, sl),
+            "Priority": priority_map.get(t.get("priority_id"), "—"),
+            "Type": type_map.get(t.get("type_id"), "—"),
             "Run": t.get("_run_name", ""),
             "Review Notes": t.get(REVIEW_NOTES_FIELD, "") or "",
-            "TestRail Link": build_testrail_test_url(t),
+            "Link": build_testrail_test_url(t),
         })
-
     df = pd.DataFrame(rows)
     if df.empty:
-        st.warning("No tests found in this plan.")
+        st.warning("No tests found.")
         return
 
-    # ── Plan header ──
-    st.title("Automation Backlog Dashboard")
+    # ── Header ──
     plan_url = plan.get("url", f"{TESTRAIL_URL}/index.php?/plans/view/{plan_id}")
-    st.markdown(f"**{plan.get('name', 'N/A')}** &mdash; [Open in TestRail]({plan_url})")
+    st.markdown(f"## Automation Backlog — {bu_name}")
+    st.caption(f"{plan.get('name', '')}  ·  [Open in TestRail]({plan_url})")
 
-    run_names_display = " / ".join([f"`{r['run_name']}`" for r in runs_info])
-    st.markdown(f"Runs: {run_names_display}")
-
-    # --- Run filter in sidebar ---
+    # ── Run filter ──
     run_names = ["All Runs"] + sorted(df["Run"].unique().tolist())
-    selected_run = st.sidebar.selectbox("Filter by Run", run_names)
-    df_filtered = df[df["Run"] == selected_run].copy() if selected_run != "All Runs" else df.copy()
-    total_tests = len(df_filtered)
+    selected_run = st.sidebar.selectbox("Run", run_names)
+    dff = df[df["Run"] == selected_run].copy() if selected_run != "All Runs" else df.copy()
+    total = len(dff)
 
-    # --- Status order ---
-    all_statuses_in_data = df_filtered["Status"].unique().tolist()
-    status_order = [s for s in BASE_STATUS_ORDER if s in all_statuses_in_data]
-    for s in all_statuses_in_data:
-        if s not in status_order:
-            status_order.append(s)
+    # ── Status order ──
+    present = dff["Status"].unique().tolist()
+    order = [s for s in BASE_STATUS_ORDER if s in present]
+    for s in present:
+        if s not in order:
+            order.append(s)
+    counts = dff["Status"].value_counts()
 
-    status_counts = df_filtered["Status"].value_counts()
+    # ── KPI Cards (Plotly indicator) ──
+    st.markdown("")
+    fig_kpi = go.Figure()
+    n = len(order)
+    for i, status in enumerate(order):
+        c = int(counts.get(status, 0))
+        pct = c / total * 100 if total else 0
+        color = STATUS_COLORS.get(status, "#64748b")
+        fig_kpi.add_trace(go.Indicator(
+            mode="number",
+            value=c,
+            number=dict(font=dict(size=36, color=color)),
+            title=dict(text=f"<b>{status}</b><br><span style='font-size:0.75em;color:#888'>{pct:.1f}%</span>",
+                       font=dict(size=13)),
+            domain=dict(
+                x=[i / n + 0.005, (i + 1) / n - 0.005],
+                y=[0, 1],
+            ),
+        ))
+    fig_kpi.update_layout(
+        height=120,
+        margin=dict(t=30, b=0, l=10, r=10),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(fig_kpi, use_container_width=True, config={"displayModeBar": False})
 
-    st.divider()
+    st.caption(f"**{total}** tests total across **{len(runs_info)}** run(s)")
 
-    # ── KPI metrics ──
-    # Split into two rows if many statuses
-    row_size = min(len(status_order), 5)
-    row1_statuses = status_order[:row_size]
-    row2_statuses = status_order[row_size:]
+    # ── Progress ──
+    done_set = {"Passed", "Passed with Issue", "Passed with Stub"}
+    done = sum(int(counts.get(s, 0)) for s in done_set)
+    na = int(counts.get("Not Applicable", 0))
+    actionable = total - na
+    pct_done = done / actionable if actionable else 0
 
-    cols = st.columns(len(row1_statuses))
-    for i, status in enumerate(row1_statuses):
-        count = status_counts.get(status, 0)
-        pct = (count / total_tests * 100) if total_tests > 0 else 0
-        with cols[i]:
-            colored = STATUS_EMOJI.get(status, status)
-            st.metric(label=status, value=count, delta=f"{pct:.1f}%")
+    # Plotly horizontal bar for progress
+    fig_prog = go.Figure()
+    fig_prog.add_trace(go.Bar(
+        x=[pct_done * 100], y=[""], orientation="h",
+        marker=dict(color="#059669", cornerradius=6),
+        text=f"  {pct_done*100:.1f}%", textposition="inside",
+        textfont=dict(color="white", size=14),
+        hoverinfo="skip",
+    ))
+    fig_prog.add_trace(go.Bar(
+        x=[(1 - pct_done) * 100], y=[""], orientation="h",
+        marker=dict(color="#e2e8f0", cornerradius=6),
+        hoverinfo="skip", showlegend=False,
+    ))
+    fig_prog.update_layout(
+        barmode="stack",
+        height=56,
+        margin=dict(t=0, b=0, l=0, r=0),
+        xaxis=dict(visible=False, range=[0, 100]),
+        yaxis=dict(visible=False),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        showlegend=False,
+    )
+    st.plotly_chart(fig_prog, use_container_width=True, config={"displayModeBar": False})
+    st.caption(
+        f"**{done}** / **{actionable}** actionable tests automated · "
+        f"{na} not applicable excluded"
+    )
 
-    if row2_statuses:
-        cols2 = st.columns(len(row2_statuses))
-        for i, status in enumerate(row2_statuses):
-            count = status_counts.get(status, 0)
-            pct = (count / total_tests * 100) if total_tests > 0 else 0
-            with cols2[i]:
-                st.metric(label=status, value=count, delta=f"{pct:.1f}%")
-
-    st.markdown(f"**Total: {total_tests} tests**")
-
-    # ── Automation Progress ──
-    st.divider()
-    done_statuses = {"Passed", "Passed with Issue", "Passed with Stub"}
-    done_count = sum(status_counts.get(s, 0) for s in done_statuses)
-    na_count = status_counts.get("Not Applicable", 0)
-    actionable = total_tests - na_count
-    pct = (done_count / actionable) if actionable > 0 else 0
-
-    prog_col1, prog_col2 = st.columns([3, 1])
-    with prog_col1:
-        st.markdown("**Automation Progress**")
-        st.progress(pct)
-    with prog_col2:
-        st.metric("Completed", f"{pct*100:.1f}%", delta=f"{done_count}/{actionable}")
-
-    st.caption(f"{done_count} of {actionable} actionable tests completed — {na_count} not applicable excluded")
+    st.markdown("")
 
     # ── Charts ──
-    st.divider()
-    col_chart1, col_chart2 = st.columns(2)
+    c1, c2 = st.columns(2, gap="large")
 
-    with col_chart1:
-        st.subheader("Status Distribution")
-        chart_data = [{"Status": s, "Count": status_counts.get(s, 0)}
-                      for s in status_order if status_counts.get(s, 0) > 0]
-        if chart_data:
-            fig = go.Figure(data=[go.Pie(
-                labels=[d["Status"] for d in chart_data],
-                values=[d["Count"] for d in chart_data],
-                marker=dict(colors=[STATUS_COLORS.get(d["Status"], "#64748b") for d in chart_data]),
-                hole=0.45,
-                textposition="inside",
-                textinfo="value+percent",
-                textfont_size=12,
-            )])
-            fig.update_layout(
-                margin=dict(t=20, b=20, l=20, r=20),
-                height=380,
-                showlegend=True,
-                legend=dict(orientation="h", yanchor="top", y=-0.02, xanchor="center", x=0.5),
-            )
-            st.plotly_chart(fig, use_container_width=True)
+    with c1:
+        st.markdown("##### Status Distribution")
+        cd = [{"Status": s, "Count": int(counts.get(s, 0))} for s in order if counts.get(s, 0)]
+        fig_pie = go.Figure(go.Pie(
+            labels=[d["Status"] for d in cd],
+            values=[d["Count"] for d in cd],
+            marker=dict(colors=[STATUS_COLORS.get(d["Status"], "#64748b") for d in cd]),
+            hole=0.5, textposition="inside", textinfo="value+percent",
+            textfont_size=11, sort=False,
+        ))
+        fig_pie.update_layout(
+            height=360, margin=dict(t=10, b=10, l=10, r=10),
+            legend=dict(orientation="h", y=-0.05, x=0.5, xanchor="center", font=dict(size=11)),
+            paper_bgcolor="rgba(0,0,0,0)",
+        )
+        st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
 
-    with col_chart2:
-        st.subheader("Status by Run")
+    with c2:
+        st.markdown("##### Desktop vs Mobile")
         if len(runs_info) > 1:
-            run_status = df.groupby(["Run", "Status"]).size().reset_index(name="Count")
-            fig2 = px.bar(
-                run_status, x="Run", y="Count", color="Status",
-                color_discrete_map=STATUS_COLORS, barmode="stack",
-                category_orders={"Status": status_order},
+            rs = df.groupby(["Run", "Status"]).size().reset_index(name="Count")
+            fig_bar = go.Figure()
+            for status in order:
+                sub = rs[rs["Status"] == status]
+                if not sub.empty:
+                    fig_bar.add_trace(go.Bar(
+                        x=sub["Run"], y=sub["Count"], name=status,
+                        marker_color=STATUS_COLORS.get(status, "#64748b"),
+                    ))
+            fig_bar.update_layout(
+                barmode="stack", height=360,
+                margin=dict(t=10, b=10, l=10, r=10),
+                legend=dict(orientation="h", y=-0.12, x=0.5, xanchor="center", font=dict(size=11)),
+                xaxis_title="", yaxis_title="",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
             )
-            fig2.update_layout(
-                margin=dict(t=20, b=20, l=20, r=20),
-                height=380,
-                legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5),
-                xaxis_title="", yaxis_title="Tests",
-            )
-            st.plotly_chart(fig2, use_container_width=True)
+            fig_bar.update_yaxes(gridcolor="#f0f0f0")
+            st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
         else:
-            st.info("Single run in this plan.")
+            st.info("Single run — comparison not available.")
+
+    st.markdown("")
 
     # ── Detail tables ──
-    st.divider()
-    st.subheader("Detail by Status")
+    st.markdown("##### Test Details")
 
-    for status in status_order:
-        group_df = df_filtered[df_filtered["Status"] == status]
-        count = len(group_df)
-        if count == 0:
+    for status in order:
+        grp = dff[dff["Status"] == status]
+        cnt = len(grp)
+        if cnt == 0:
             continue
 
+        color = STATUS_COLORS.get(status, "#64748b")
         desc = STATUS_DESCRIPTIONS.get(status, "")
-        expander_label = f"{status} — {count} tests"
 
-        with st.expander(expander_label):
+        with st.expander(f"{status} — {cnt} tests"):
             st.caption(desc)
 
-            display_cols = ["Case ID", "Title", "Priority", "Type", "Run"]
+            cols = ["Case ID", "Title", "Priority", "Type", "Run"]
             if status == "Not Applicable":
-                display_cols.append("Review Notes")
+                cols.append("Review Notes")
 
-            display_df = group_df[display_cols + ["TestRail Link"]].copy()
-            display_df = display_df.rename(columns={"TestRail Link": "Link"})
-
+            show = grp[cols + ["Link"]].copy()
             st.dataframe(
-                display_df,
+                show,
                 column_config={
                     "Link": st.column_config.LinkColumn("TestRail", display_text="Open"),
                     "Case ID": st.column_config.NumberColumn("Case ID", format="%d"),
@@ -373,12 +371,14 @@ def main():
             )
 
     # ── Legend ──
-    st.divider()
-    st.subheader("Status Legend")
-    for status in status_order:
-        desc = STATUS_DESCRIPTIONS.get(status, "")
-        colored = STATUS_EMOJI.get(status, status)
-        st.markdown(f"- **{colored}**: {desc}")
+    st.markdown("")
+    st.markdown("##### Legend")
+    legend_md = ""
+    for s in order:
+        c = STATUS_COLORS.get(s, "#64748b")
+        d = STATUS_DESCRIPTIONS.get(s, "")
+        legend_md += f"- **{s}** — {d}\n"
+    st.markdown(legend_md)
 
 
 if __name__ == "__main__":
