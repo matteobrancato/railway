@@ -1,4 +1,4 @@
-from __future__ import annotations
+from typing import Optional, List
 
 import streamlit as st
 import requests
@@ -44,7 +44,7 @@ class TestRailClient:
         self.session.auth = (user, api_key)
         self.session.headers.update({"Content-Type": "application/json"})
 
-    def _get(self, endpoint: str, params: dict | None = None):
+    def _get(self, endpoint: str, params: Optional[dict] = None):
         url = f"{self.base_url}/index.php?/api/v2/{endpoint}"
         if params:
             query = "&".join(f"{k}={v}" for k, v in params.items())
@@ -56,7 +56,7 @@ class TestRailClient:
     def get_plan(self, plan_id: int) -> dict:
         return self._get(f"get_plan/{plan_id}")
 
-    def get_tests(self, run_id: int) -> list[dict]:
+    def get_tests(self, run_id: int) -> List[dict]:
         tests, offset, limit = [], 0, 250
         while True:
             data = self._get(f"get_tests/{run_id}", {"limit": limit, "offset": offset})
@@ -72,16 +72,16 @@ class TestRailClient:
                 break
         return tests
 
-    def get_statuses(self) -> list[dict]:
+    def get_statuses(self) -> List[dict]:
         return self._get("get_statuses")
 
-    def get_priorities(self) -> list[dict]:
+    def get_priorities(self) -> List[dict]:
         return self._get("get_priorities")
 
-    def get_case_types(self) -> list[dict]:
+    def get_case_types(self) -> List[dict]:
         return self._get("get_case_types")
 
-    def get_case_fields(self) -> list[dict]:
+    def get_case_fields(self) -> List[dict]:
         return self._get("get_case_fields")
 
 
@@ -173,7 +173,7 @@ def resolve_status(label: str) -> str:
     return STATUS_GROUP_MAP.get(label, label)
 
 
-def get_status_order(present: list[str]) -> list[str]:
+def get_status_order(present: List[str]) -> List[str]:
     order = [s for s in BASE_STATUS_ORDER if s in present]
     for s in present:
         if s not in order:
@@ -181,7 +181,7 @@ def get_status_order(present: list[str]) -> list[str]:
     return order
 
 
-def resolve_custom_field(raw, dmap: dict | None) -> str:
+def resolve_custom_field(raw, dmap: Optional[dict]) -> str:
     if raw is None:
         return ""
     if dmap:
