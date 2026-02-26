@@ -388,44 +388,27 @@ def main():
     st.set_page_config(page_title="Automation Backlog", layout="wide")
 
     # ── Inject dark theme CSS ──
-    st.markdown(f"""<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-    html, body, [class*="css"] {{ font-family: 'Inter', system-ui, sans-serif; }}
-    .block-container {{ padding-top: 1.2rem; padding-bottom: 1rem; }}
-    #MainMenu, footer, header {{ visibility: hidden; }}
-
-    /* Sidebar */
-    section[data-testid="stSidebar"] {{
-        background: {CARD_BG};
-        border-right: 1px solid {BORDER};
-    }}
-    section[data-testid="stSidebar"] .stSelectbox label {{
-        color: {TEXT_DIM};
-        font-size: 0.8rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }}
-
-    /* Expanders */
-    div[data-testid="stExpander"] {{
-        border: 1px solid {BORDER};
-        border-radius: 8px;
-        margin-bottom: 6px;
-    }}
-    div[data-testid="stExpander"] details summary span {{
-        font-size: 0.9rem;
-        font-weight: 500;
-    }}
-
-    /* Dataframes */
-    .stDataFrame {{ border-radius: 8px; overflow: hidden; }}
-
-    /* Dividers */
-    hr {{ border-color: {BORDER} !important; opacity: 0.5; }}
-
-    /* Captions */
-    .stCaption {{ color: {TEXT_DIM}; }}
-    </style>""", unsafe_allow_html=True)
+    _css = (
+        "<style>"
+        ".block-container { padding-top: 1.2rem; padding-bottom: 1rem; }"
+        "#MainMenu, footer, header { visibility: hidden; }"
+        "section[data-testid='stSidebar'] {"
+        "  background: " + CARD_BG + ";"
+        "  border-right: 1px solid " + BORDER + ";"
+        "}"
+        "div[data-testid='stExpander'] {"
+        "  border: 1px solid " + BORDER + ";"
+        "  border-radius: 8px;"
+        "  margin-bottom: 6px;"
+        "}"
+        "div[data-testid='stExpander'] details summary span {"
+        "  font-size: 0.9rem; font-weight: 500;"
+        "}"
+        ".stDataFrame { border-radius: 8px; overflow: hidden; }"
+        "hr { border-color: " + BORDER + " !important; opacity: 0.5; }"
+        "</style>"
+    )
+    st.markdown(_css, unsafe_allow_html=True)
 
     # ── Sidebar ──
     with st.sidebar:
