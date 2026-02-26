@@ -394,10 +394,6 @@ def main():
         "<style>"
         ".block-container { padding-top: 1.2rem; padding-bottom: 1rem; }"
         "#MainMenu, footer, header { visibility: hidden; }"
-        "section[data-testid='stSidebar'] {"
-        "  background: " + CARD_BG + ";"
-        "  border-right: 1px solid " + BORDER + ";"
-        "}"
         "div[data-testid='stExpander'] {"
         "  border: 1px solid " + BORDER + ";"
         "  border-radius: 8px;"
@@ -412,15 +408,15 @@ def main():
     )
     st.markdown(_css, unsafe_allow_html=True)
 
-    # ── Sidebar ──
-    with st.sidebar:
-        st.markdown(f"### Automation Backlog")
-        bu_name = st.selectbox("BUSINESS UNIT", list(BU_PLANS.keys()))
-        st.divider()
-
     if not all([TESTRAIL_URL, TESTRAIL_USER, TESTRAIL_API_KEY]):
         st.error("TestRail credentials not configured.")
         return
+
+    # ── Header with filters inline ──
+    st.markdown("## Automation Backlog")
+    f1, f2, f3 = st.columns([2, 2, 6])
+    with f1:
+        bu_name = st.selectbox("Business Unit", list(BU_PLANS.keys()))
 
     plan_id = BU_PLANS[bu_name]["plan_id"]
 
@@ -436,15 +432,13 @@ def main():
         st.warning("No tests found.")
         return
 
-    # ── Header ──
+    run_names = ["All Runs"] + sorted(df["Run"].unique().tolist())
+    with f2:
+        selected_run = st.selectbox("Run", run_names)
+
     plan_url = plan.get("url", f"{TESTRAIL_URL}/index.php?/plans/view/{plan_id}")
-    st.markdown(f"## {bu_name}")
     runs_pills = "  ".join([f"`{r['run_name']}`" for r in runs_info])
     st.caption(f"{plan.get('name', '')}  ·  [Open in TestRail]({plan_url})  ·  {runs_pills}")
-
-    # ── Run filter ──
-    run_names = ["All Runs"] + sorted(df["Run"].unique().tolist())
-    selected_run = st.sidebar.selectbox("RUN", run_names)
     dff = df[df["Run"] == selected_run].copy() if selected_run != "All Runs" else df.copy()
     total = len(dff)
 
